@@ -1,45 +1,50 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 
-# Cargar los datos
-df = pd.read_csv('ventas.csv', parse_dates=['Fecha'])
+# Título de la app
+st.title("Análisis OLAP - Ventas por Producto, Región y Año")
 
-# Título
-st.title("Análisis Multidimensional con OLAP - Streamlit")
+# Cargar los datos desde un archivo CSV
+archivo = st.file_uploader("Sube tu archivo CSV", type=["csv"])
+if archivo is not None:
+    df = pd.read_csv(archivo)
 
-# Mostrar el DataFrame
-if st.checkbox("Mostrar datos originales"):
-    st.dataframe(df)
+    # Convertir columna Fecha a tipo datetime
+    df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce')
 
-# Filtros tipo Slice y Dice
-st.sidebar.header("Filtros")
-productos = st.sidebar.multiselect("Selecciona Producto(s)", options=df['Producto'].unique(), default=df['Producto'].unique())
-regiones = st.sidebar.multiselect("Selecciona Región(es)", options=df['Región'].unique(), default=df['Región'].unique())
-años = st.sidebar.multiselect("Selecciona Año(s)", options=df['Año'].unique(), default=df['Año'].unique())
+    # Eliminar filas con fechas inválidas
+    df = df.dropna(subset=['Fecha'])
 
-# Aplicar filtros
-df_filtrado = df[(df['Producto'].isin(productos)) & (df['Región'].isin(regiones)) & (df['Año'].isin(años))]
+    # Crear columna Año
+    df['Año'] = df['Fecha'].dt.year
 
-# Mostrar tabla filtrada
-st.subheader("Datos filtrados")
-st.dataframe(df_filtrado)
+    # Filtros interactivos
+    años = st.sidebar.multiselect("Selecciona Año(s)", options=sorted(df['Año'].unique()), default=sorted(df['Año'].unique()))
+    productos = st.sidebar.multiselect("Selecciona Producto(s)", options=df['Producto'].unique(), default=df['Producto'].unique())
+    regiones = st.sidebar.multiselect("Selecciona Región(es)", options=df['Región'].unique(), default=df['Región'].unique())
 
-# Roll-up: Ventas por Año y Producto
-st.subheader("Roll-up: Ventas por Año y Producto")
-rollup = df_filtrado.groupby(['Año', 'Producto'])['Ventas'].sum().reset_index()
-st.dataframe(rollup)
+    # Filtrar datos
+    df_filtrado = df[
+        (df['Año'].isin(años)) &
+        (df['Producto'].isin(productos)) &
+        (df['Región'].isin(regiones))
+    ]
 
-# Drill-down: Año, Mes y Producto
-st.subheader("Drill-down: Ventas por Año, Mes y Producto")
-drill = df_filtrado.groupby(['Año', 'Mes', 'Producto'])['Ventas'].sum().reset_index()
-st.dataframe(drill)
+    # Mostrar tabla dinámica
+    st.subheader("Resumen de Ventas")
+    tabla = pd.pivot_table(
+        df_filtrado,
+        values='Ventas',
+        index=['Año', 'Producto'],
+        columns='Región',
+        aggfunc='sum',
+        fill_value=0
+    )
+    st.dataframe(tabla)
 
-# Pivot
-st.subheader("Pivot: Región vs Producto")
-pivot = df_filtrado.pivot_table(values='Ventas', index='Región', columns='Producto', aggfunc='sum', fill_value=0)
-st.dataframe(pivot)
-
-# Visualización simple
-st.subheader("Gráfico: Total de Ventas por Región")
-grafico = df_filtrado.groupby('Región')['Ventas'].sum()
-st.bar_chart(grafico)
+    # Gráfica de barras
+    st.subheader("Gráfica de Ventas por Producto y Año")
+    grafica = df_filtrado.groupby(['Año', 'Producto'])['Ventas'].sum().reset_index()
+    fig = px.bar(grafica, x='Producto', y='Ventas', color='Año', barmode='group')
+    st.plotly_chart(fig)
